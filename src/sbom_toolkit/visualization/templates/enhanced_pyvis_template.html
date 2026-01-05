@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enhanced SBOM Visualization</title>
+    <meta charset="utf-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        /* Enhanced Controls Panel */
+        #controls {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 320px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            overflow-y: auto;
+            border-left: 1px solid #e0e0e0;
+        }
+
+        #controls.collapsed {
+            transform: translateX(100%);
+        }
+
+        #controls-header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+        }
+
+        #controls-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        #controls-content {
+            padding: 20px;
+        }
+
+        #toggle-controls {
+            position: absolute;
+            left: -50px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1002;
+        }
+
+        #toggle-button {
+            width: 50px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px 0 0 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+            transition: background 0.3s ease;
+        }
+
+        #toggle-button:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        }
+
+        /* Visualization Container */
+        #visualization-container {
+            width: 100%;
+            height: 100vh;
+            transition: width 0.3s ease;
+        }
+
+        #controls:not(.collapsed) + #visualization-container {
+            width: calc(100% - 320px);
+        }
+
+        /* Control Sections */
+        .control-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .control-section h3 {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-section h3 i {
+            color: #667eea;
+        }
+
+        /* Toggle Controls */
+        .toggle-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 12px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+
+        .toggle-control label {
+            font-size: 14px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        /* Enhanced Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 25px;
+            background: #ccc;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: #28a745;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 21px;
+            height: 21px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(25px);
+        }
+
+        /* Buttons */
+        .control-button {
+            width: 100%;
+            padding: 12px 16px;
+            margin: 8px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .control-button:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+        }
+
+        .control-button.secondary {
+            background: #6c757d;
+        }
+
+        .control-button.secondary:hover {
+            background: #5a6268;
+        }
+
+        /* Search Box */
+        .search-container {
+            position: relative;
+            margin: 12px 0;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 40px 10px 15px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            box-sizing: border-box;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+        }
+
+        /* Layout Selector */
+        .layout-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .layout-option {
+            padding: 10px;
+            text-align: center;
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .layout-option:hover {
+            border-color: #667eea;
+        }
+
+        .layout-option.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        /* Statistics Panel */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+
+        .stat-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #495057;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+
+        .stat-item.vulnerable .stat-number {
+            color: #dc3545;
+        }
+
+        .stat-item.safe .stat-number {
+            color: #28a745;
+        }
+
+        /* Legend */
+        .legend {
+            margin: 15px 0;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+        }
+
+        /* Export Options */
+        .export-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            #controls {
+                width: 100%;
+                height: auto;
+                position: fixed;
+                bottom: 0;
+                top: auto;
+                right: 0;
+                transform: translateY(100%);
+            }
+
+            #controls:not(.collapsed) {
+                transform: translateY(0);
+            }
+
+            #toggle-controls {
+                left: 50%;
+                top: -50px;
+                transform: translateX(-50%);
+            }
+
+            #toggle-button {
+                width: 60px;
+                height: 50px;
+                border-radius: 8px 8px 0 0;
+            }
+
+            #visualization-container {
+                width: 100% !important;
+            }
+        }
+
+        /* Custom Scrollbar */
+        #controls::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #controls::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        #controls::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        #controls::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+    </style>
+</head>
+<body>
+    <!-- Enhanced Controls Panel -->
+    <div id="controls">
+        <div id="toggle-controls">
+            <button id="toggle-button" title="Toggle Controls">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+        </div>
+
+        <div id="controls-header">
+            <h2><i class="fas fa-network-wired"></i> SBOM Analysis</h2>
+        </div>
+
+        <div id="controls-content">
+            <!-- Statistics Section -->
+            <div class="control-section">
+                <h3><i class="fas fa-chart-bar"></i> Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-number" id="total-components">0</span>
+                        <div class="stat-label">Components</div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="total-licenses">0</span>
+                        <div class="stat-label">Licenses</div>
+                    </div>
+                    <div class="stat-item vulnerable">
+                        <span class="stat-number" id="vulnerable-count">0</span>
+                        <div class="stat-label">Vulnerable</div>
+                    </div>
+                    <div class="stat-item safe">
+                        <span class="stat-number" id="safe-count">0</span>
+                        <div class="stat-label">Safe</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Section -->
+            <div class="control-section">
+                <h3><i class="fas fa-search"></i> Search & Filter</h3>
+                <div class="search-container">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search components...">
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+                <button class="control-button secondary" id="clear-search">
+                    <i class="fas fa-times"></i> Clear Search
+                </button>
+            </div>
+
+            <!-- Layout Section -->
+            <div class="control-section">
+                <h3><i class="fas fa-project-diagram"></i> Layout</h3>
+                <div class="layout-selector">
+                    <div class="layout-option active" data-layout="force">
+                        <i class="fas fa-circle-notch"></i>
+                        <div>Force</div>
+                    </div>
+                    <div class="layout-option" data-layout="hierarchical">
+                        <i class="fas fa-sitemap"></i>
+                        <div>Tree</div>
+                    </div>
+                    <div class="layout-option" data-layout="circular">
+                        <i class="fas fa-circle"></i>
+                        <div>Circular</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visibility Controls -->
+            <div class="control-section">
+                <h3><i class="fas fa-eye"></i> Visibility</h3>
+
+                <div class="toggle-control">
+                    <label for="show-direct">Direct Dependencies</label>
+                    <div class="toggle-switch active" id="show-direct"></div>
+                </div>
+
+                <div class="toggle-control">
+                    <label for="show-transitive">Transitive Dependencies</label>
+                    <div class="toggle-switch active" id="show-transitive"></div>
+                </div>
+
+                <div class="toggle-control">
+                    <label for="show-licenses">License Connections</label>
+                    <div class="toggle-switch active" id="show-licenses"></div>
+                </div>
+
+                <div class="toggle-control">
+                    <label for="highlight-vulnerable">Highlight Vulnerable</label>
+                    <div class="toggle-switch" id="highlight-vulnerable"></div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="control-section">
+                <h3><i class="fas fa-palette"></i> Legend</h3>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #FF5252;"></div>
+                        Vulnerable Components
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #FFA500;"></div>
+                        Dependent Components
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #4169E1;"></div>
+                        Safe Components
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #800080;"></div>
+                        Licenses
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #808080;"></div>
+                        Project Root
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="control-section">
+                <h3><i class="fas fa-cogs"></i> Controls</h3>
+                <button class="control-button" id="reset-view">
+                    <i class="fas fa-home"></i> Reset View
+                </button>
+                <button class="control-button" id="fit-to-screen">
+                    <i class="fas fa-expand-arrows-alt"></i> Fit to Screen
+                </button>
+                <button class="control-button" id="center-vulnerable">
+                    <i class="fas fa-crosshairs"></i> Center on Vulnerable
+                </button>
+            </div>
+
+            <!-- Export Options -->
+            <div class="control-section">
+                <h3><i class="fas fa-download"></i> Export</h3>
+                <div class="export-options">
+                    <button class="control-button secondary" id="export-png">
+                        <i class="fas fa-image"></i> PNG
+                    </button>
+                    <button class="control-button secondary" id="export-svg">
+                        <i class="fas fa-vector-square"></i> SVG
+                    </button>
+                </div>
+                <button class="control-button secondary" id="export-data">
+                    <i class="fas fa-file-export"></i> Export Data
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Visualization Container -->
+    <div id="visualization-container">
+        {{PYVIS_HTML}}
+    </div>
+
+    <script>
+        // Enhanced JavaScript for controls
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize controls
+            initializeControls();
+            updateStatistics();
+            setupEventListeners();
+        });
+
+        function initializeControls() {
+            // Toggle controls panel
+            const toggleButton = document.getElementById('toggle-button');
+            const controls = document.getElementById('controls');
+            const icon = toggleButton.querySelector('i');
+
+            toggleButton.addEventListener('click', function() {
+                controls.classList.toggle('collapsed');
+
+                if (controls.classList.contains('collapsed')) {
+                    icon.classList.remove('fa-chevron-left');
+                    icon.classList.add('fa-chevron-right');
+                } else {
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-left');
+                }
+            });
+
+            // Initialize toggle switches
+            document.querySelectorAll('.toggle-switch').forEach(function(toggle) {
+                toggle.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                    handleVisibilityChange();
+                });
+            });
+
+            // Layout selector
+            document.querySelectorAll('.layout-option').forEach(function(option) {
+                option.addEventListener('click', function() {
+                    document.querySelectorAll('.layout-option').forEach(opt => opt.classList.remove('active'));
+                    this.classList.add('active');
+                    handleLayoutChange(this.dataset.layout);
+                });
+            });
+        }
+
+        function updateStatistics() {
+            // This would be populated with actual data from the visualization
+            // For now, using placeholder values
+            document.getElementById('total-components').textContent = '{{TOTAL_COMPONENTS}}';
+            document.getElementById('total-licenses').textContent = '{{TOTAL_LICENSES}}';
+            document.getElementById('vulnerable-count').textContent = '{{VULNERABLE_COUNT}}';
+            document.getElementById('safe-count').textContent = '{{SAFE_COUNT}}';
+        }
+
+        function setupEventListeners() {
+            // Search functionality
+            const searchInput = document.getElementById('search-input');
+            const clearSearchBtn = document.getElementById('clear-search');
+
+            searchInput.addEventListener('input', function() {
+                handleSearch(this.value);
+            });
+
+            clearSearchBtn.addEventListener('click', function() {
+                searchInput.value = '';
+                handleSearch('');
+            });
+
+            // Control buttons
+            document.getElementById('reset-view').addEventListener('click', handleResetView);
+            document.getElementById('fit-to-screen').addEventListener('click', handleFitToScreen);
+            document.getElementById('center-vulnerable').addEventListener('click', handleCenterVulnerable);
+
+            // Export buttons
+            document.getElementById('export-png').addEventListener('click', () => handleExport('png'));
+            document.getElementById('export-svg').addEventListener('click', () => handleExport('svg'));
+            document.getElementById('export-data').addEventListener('click', handleExportData);
+        }
+
+        function handleVisibilityChange() {
+            const showDirect = document.getElementById('show-direct').classList.contains('active');
+            const showTransitive = document.getElementById('show-transitive').classList.contains('active');
+            const showLicenses = document.getElementById('show-licenses').classList.contains('active');
+            const highlightVulnerable = document.getElementById('highlight-vulnerable').classList.contains('active');
+
+            // This would integrate with the pyvis network to update visibility
+            console.log('Visibility changed:', {
+                showDirect,
+                showTransitive,
+                showLicenses,
+                highlightVulnerable
+            });
+        }
+
+        function handleLayoutChange(layout) {
+            console.log('Layout changed to:', layout);
+            // This would trigger a re-layout of the network
+        }
+
+        function handleSearch(query) {
+            console.log('Search query:', query);
+            // This would filter nodes in the visualization
+        }
+
+        function handleResetView() {
+            console.log('Reset view');
+            // Reset zoom and pan
+        }
+
+        function handleFitToScreen() {
+            console.log('Fit to screen');
+            // Fit network to screen
+        }
+
+        function handleCenterVulnerable() {
+            console.log('Center on vulnerable');
+            // Center view on vulnerable components
+        }
+
+        function handleExport(format) {
+            console.log('Export as:', format);
+            // Export visualization
+        }
+
+        function handleExportData() {
+            console.log('Export data');
+            // Export underlying data
+        }
+
+        // Auto-hide controls on mobile when visualization is interacted with
+        if (window.innerWidth <= 768) {
+            document.getElementById('visualization-container').addEventListener('click', function() {
+                document.getElementById('controls').classList.add('collapsed');
+            });
+        }
+    </script>
+</body>
+</html>

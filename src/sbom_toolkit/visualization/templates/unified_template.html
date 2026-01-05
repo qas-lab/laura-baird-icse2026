@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{TITLE}} - {{TIMESTAMP}}</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar h1 {
+            color: #2c3e50;
+            font-size: 20px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .sidebar h2 {
+            color: #34495e;
+            font-size: 16px;
+            margin: 20px 0 10px 0;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+            border-radius: 5px;
+        }
+
+        .sidebar h3 {
+            color: #2c3e50;
+            font-size: 14px;
+            margin: 15px 0 8px 0;
+            font-weight: 600;
+        }
+
+        /* Layout Selection */
+        .layout-selection {
+            margin-bottom: 25px;
+        }
+
+        .layout-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .layout-btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .layout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .layout-btn.active {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+        }
+
+        .layout-btn.active::before {
+            content: "✓";
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        /* Statistics Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(5px);
+            transition: transform 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: scale(1.05);
+        }
+
+        .stat-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card.danger .stat-number {
+            color: #e74c3c;
+        }
+
+        .stat-card.warning .stat-number {
+            color: #f39c12;
+        }
+
+        .stat-card.success .stat-number {
+            color: #27ae60;
+        }
+
+        /* Controls */
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #bdc3c7;
+            border-radius: 6px;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .control-input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .checkbox-item:hover {
+            background: rgba(52, 152, 219, 0.1);
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            margin: 0;
+        }
+
+        .checkbox-item label {
+            font-size: 12px;
+            color: #2c3e50;
+            cursor: pointer;
+            margin: 0;
+        }
+
+        /* Node Details */
+        .node-details {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .node-details.show {
+            display: block;
+        }
+
+        .node-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .node-property {
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .property-label {
+            font-weight: 500;
+            color: #34495e;
+        }
+
+        .property-value {
+            color: #7f8c8d;
+        }
+
+        .vulnerability-list {
+            margin-top: 10px;
+        }
+
+        .vulnerability-item {
+            background: #fff5f5;
+            border-left: 3px solid #e74c3c;
+            padding: 8px;
+            margin-bottom: 6px;
+            border-radius: 0 4px 4px 0;
+            font-size: 11px;
+        }
+
+        .vuln-id {
+            font-weight: bold;
+            color: #c0392b;
+        }
+
+        .vuln-severity {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .vuln-severity.critical {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .vuln-severity.high {
+            background: #e67e22;
+            color: white;
+        }
+
+        .vuln-severity.medium {
+            background: #f39c12;
+            color: white;
+        }
+
+        .vuln-severity.low {
+            background: #95a5a6;
+            color: white;
+        }
+
+        /* Main Visualization Area */
+        .main-content {
+            flex: 1;
+            position: relative;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(5px);
+        }
+
+        .visualization-header {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .viz-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .viz-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .viz-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #34495e;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .viz-button:hover {
+            background: #2c3e50;
+        }
+
+        .visualization-container {
+            position: relative;
+            height: calc(100vh - 80px);
+            overflow: hidden;
+        }
+
+        #visualization-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Loading State */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 280px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Tooltip Styles */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 300px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .tooltip h4 {
+            margin: 0 0 8px 0;
+            color: #3498db;
+        }
+
+        .tooltip p {
+            margin: 4px 0;
+            line-height: 1.4;
+        }
+
+        /* Animation Classes */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h1>SBOM Security Analysis</h1>
+
+            <!-- Statistics -->
+            <h2>📊 Overview</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-components">0</div>
+                    <div class="stat-label">Components</div>
+                </div>
+                <div class="stat-card danger">
+                    <div class="stat-number" id="vulnerable-components">0</div>
+                    <div class="stat-label">Vulnerable</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-number" id="critical-vulns">0</div>
+                    <div class="stat-label">Critical CVEs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="total-licenses">0</div>
+                    <div class="stat-label">Licenses</div>
+                </div>
+            </div>
+
+            <!-- Layout Selection -->
+            <h2>🎯 Visualization Type</h2>
+            <div class="layout-selection">
+                <div class="layout-buttons">
+                    <button class="layout-btn active" data-layout="force-directed" id="btn-force-directed">
+                        🔗 Force-Directed Network
+                    </button>
+                    <button class="layout-btn" data-layout="hierarchical" id="btn-hierarchical">
+                        🌳 Hierarchical Tree
+                    </button>
+                    <button class="layout-btn" data-layout="circular" id="btn-circular">
+                        ⭕ Circular Layout
+                    </button>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <h2>⚙️ Controls</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <label class="control-label">Search Components</label>
+                    <input type="text" class="control-input" id="search-input" placeholder="Type to search...">
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Filter Options</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="show-vulnerable" checked>
+                            <label for="show-vulnerable">Show Vulnerable</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="show-safe" checked>
+                            <label for="show-safe">Show Safe</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="show-licenses" checked>
+                            <label for="show-licenses">Show Licenses</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="show-dependencies" checked>
+                            <label for="show-dependencies">Show Dependencies</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Node Details -->
+            <h2>🔍 Selected Node</h2>
+            <div class="node-details" id="node-details">
+                <div class="node-title">Click a node to see details</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="visualization-header">
+                <div class="viz-title" id="viz-title">Force-Directed Network</div>
+                <div class="viz-controls">
+                    <button class="viz-button" id="reset-zoom">Reset View</button>
+                    <button class="viz-button" id="export-svg">Export SVG</button>
+                    <button class="viz-button" id="fullscreen">Fullscreen</button>
+                </div>
+            </div>
+
+            <div class="visualization-container">
+                <div class="loading" id="loading">
+                    <div class="loading-spinner"></div>
+                    <div>Loading visualization...</div>
+                </div>
+                <svg id="visualization-canvas"></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip" style="display: none;"></div>
+
+    <script>
+        // Template data will be injected here
+        const templateData = {{TEMPLATE_DATA}};
+
+        // Global state
+        let currentLayout = 'force-directed';
+        let currentVisualization = null;
+        let selectedNode = null;
+        let searchTerm = '';
+        let filters = {
+            showVulnerable: true,
+            showSafe: true,
+            showLicenses: true,
+            showDependencies: true
+        };
+
+        // Visualization engines - will be defined after classes
+        let visualizationEngines;
+
+        // Initialize application
+        function initializeApp() {
+            console.log("=== INITIALIZING APP ===");
+            console.log("templateData:", templateData);
+            console.log("Statistics:", templateData.statistics);
+
+            try {
+                updateStatistics();
+                console.log("Statistics updated successfully");
+            } catch (error) {
+                console.error("Error updating statistics:", error);
+            }
+
+            try {
+                setupEventListeners();
+                console.log("Event listeners setup successfully");
+            } catch (error) {
+                console.error("Error setting up event listeners:", error);
+            }
+
+            try {
+                showVisualization(currentLayout);
+                console.log("Initial visualization shown successfully");
+            } catch (error) {
+                console.error("Error showing initial visualization:", error);
+            }
+        }
+
+        // Update statistics display
+        function updateStatistics() {
+            const stats = templateData.statistics;
+            console.log("Updating statistics with:", stats);
+
+            // Calculate license statistics from the actual data
+            const licenseStats = calculateLicenseStats();
+
+            const elements = {
+                'total-components': stats.total_components || 0,
+                'vulnerable-components': stats.vulnerable_components || 0,
+                'critical-vulns': stats.critical_vulnerabilities || 0,
+                'total-licenses': licenseStats.totalUnique || 0
+            };
+
+            for (const [id, value] of Object.entries(elements)) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                    console.log(`Updated ${id} to ${value}`);
+                } else {
+                    console.error(`Element with ID '${id}' not found`);
+                }
+            }
+        }
+
+        // Calculate license statistics from visualization data
+        function calculateLicenseStats() {
+            const licensesByType = {};
+            const uniqueLicenses = new Set();
+
+            // Check all layouts for nodes with license data
+            Object.values(templateData.visualization_data || {}).forEach(layoutData => {
+                if (layoutData && layoutData.data && layoutData.data.nodes) {
+                    layoutData.data.nodes.forEach(node => {
+                        if (node.licenses && node.licenses.length > 0) {
+                            node.licenses.forEach(license => {
+                                uniqueLicenses.add(license.name);
+                                const type = license.type || 'unknown';
+                                if (!licensesByType[type]) {
+                                    licensesByType[type] = new Set();
+                                }
+                                licensesByType[type].add(license.name);
+                            });
+                        }
+                    });
+                }
+            });
+
+            return {
+                totalUnique: uniqueLicenses.size,
+                byType: licensesByType
+            };
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Layout button clicks
+            document.querySelectorAll('.layout-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const layout = e.target.getAttribute('data-layout');
+                    switchLayout(layout);
+                });
+            });
+
+            // Search input
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                searchTerm = e.target.value.toLowerCase();
+                applyFilters();
+            });
+
+            // Filter checkboxes
+            document.getElementById('show-vulnerable').addEventListener('change', (e) => {
+                filters.showVulnerable = e.target.checked;
+                applyFilters();
+            });
+
+            document.getElementById('show-safe').addEventListener('change', (e) => {
+                filters.showSafe = e.target.checked;
+                applyFilters();
+            });
+
+            document.getElementById('show-licenses').addEventListener('change', (e) => {
+                filters.showLicenses = e.target.checked;
+                applyFilters();
+            });
+
+            document.getElementById('show-dependencies').addEventListener('change', (e) => {
+                filters.showDependencies = e.target.checked;
+                applyFilters();
+            });
+
+            // Visualization controls
+            document.getElementById('reset-zoom').addEventListener('click', resetZoom);
+            document.getElementById('export-svg').addEventListener('click', exportSVG);
+            document.getElementById('fullscreen').addEventListener('click', toggleFullscreen);
+        }
+
+        // Switch to different layout
+        function switchLayout(layout) {
+            if (layout === currentLayout) return;
+
+            // Update button states
+            document.querySelectorAll('.layout-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`btn-${layout}`).classList.add('active');
+
+            // Update title
+            const titles = {
+                'force-directed': 'Force-Directed Network',
+                'hierarchical': 'Hierarchical Tree',
+                'circular': 'Circular Layout'
+            };
+            document.getElementById('viz-title').textContent = titles[layout];
+
+            currentLayout = layout;
+            showVisualization(layout);
+        }
+
+        // Show visualization for given layout
+        function showVisualization(layout) {
+            const loadingEl = document.getElementById('loading');
+            loadingEl.style.display = 'block';
+
+            // Clear previous visualization
+            if (currentVisualization && currentVisualization.destroy) {
+                currentVisualization.destroy();
+            }
+
+            // Check if data exists for this layout
+            if (!templateData.visualization_data[layout]) {
+                console.error(`No data available for layout: ${layout}`);
+                loadingEl.innerHTML = `<div>Error: No data for ${layout} layout</div>`;
+                return;
+            }
+
+            // Create new visualization
+            setTimeout(() => {
+                try {
+                    const VisualizationClass = visualizationEngines[layout];
+                    if (VisualizationClass) {
+                        currentVisualization = new VisualizationClass(
+                            templateData.visualization_data[layout],
+                            '#visualization-canvas',
+                            {
+                                onNodeClick: handleNodeClick,
+                                onNodeHover: handleNodeHover,
+                                filters: filters
+                            }
+                        );
+                        currentVisualization.render();
+                    } else {
+                        throw new Error(`Visualization engine not found: ${layout}`);
+                    }
+
+                    loadingEl.style.display = 'none';
+                } catch (error) {
+                    console.error('Visualization error:', error);
+                    loadingEl.innerHTML = `<div>Error loading ${layout} visualization</div>`;
+                }
+            }, 100);
+        }
+
+        // Handle node click
+        function handleNodeClick(nodeData) {
+            selectedNode = nodeData;
+            showNodeDetails(nodeData);
+        }
+
+        // Handle node hover
+        function handleNodeHover(nodeData, event) {
+            if (nodeData) {
+                showTooltip(nodeData, event);
+            } else {
+                hideTooltip();
+            }
+        }
+
+        // Show node details in sidebar
+        function showNodeDetails(nodeData) {
+            const detailsEl = document.getElementById('node-details');
+
+            let html = `
+                <div class="node-title">${nodeData.fullLabel || nodeData.label || nodeData.id}</div>
+                <div class="node-property">
+                    <span class="property-label">Type:</span>
+                    <span class="property-value">${nodeData.type || 'Unknown'}</span>
+                </div>
+                <div class="node-property">
+                    <span class="property-label">Status:</span>
+                    <span class="property-value">${nodeData.status || 'Default'}</span>
+                </div>
+            `;
+
+            if (nodeData.description) {
+                html += `
+                    <div class="node-property">
+                        <span class="property-label">Description:</span>
+                        <span class="property-value">${nodeData.description}</span>
+                    </div>
+                `;
+            }
+
+            // Add license information to sidebar
+            if (nodeData.licenses && nodeData.licenses.length > 0) {
+                html += `
+                    <div class="node-property">
+                        <span class="property-label">Licenses:</span>
+                        <div class="property-value">
+                `;
+
+                nodeData.licenses.forEach(license => {
+                    let typeColor = '#6c757d';
+                    if (license.type === 'permissive') {
+                        typeColor = '#28a745';
+                    } else if (license.type === 'copyleft') {
+                        typeColor = '#ffc107';
+                    } else if (license.type === 'proprietary') {
+                        typeColor = '#dc3545';
+                    }
+
+                    html += `<div style="margin: 2px 0; font-size: 12px;">
+                        <strong>${license.name}</strong>
+                        <span style="color: ${typeColor};">(${license.type})</span>
+                    </div>`;
+                });
+
+                html += `</div></div>`;
+            }
+
+            if (nodeData.vulnerabilities && nodeData.vulnerabilities.length > 0) {
+                html += `<div class="vulnerability-list">`;
+                html += `<h3>Vulnerabilities (${nodeData.vulnerabilities.length})</h3>`;
+
+                nodeData.vulnerabilities.slice(0, 5).forEach(vuln => {
+                    const severity = (vuln.cvss_severity || 'unknown').toLowerCase();
+                    html += `
+                        <div class="vulnerability-item">
+                            <span class="vuln-id">${vuln.id || vuln.cve_id || 'Unknown'}</span>
+                            <span class="vuln-severity ${severity}">${severity.toUpperCase()}</span>
+                            <div style="margin-top: 4px; font-size: 10px; color: #666;">
+                                ${(vuln.description || '').substring(0, 100)}${vuln.description && vuln.description.length > 100 ? '...' : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                if (nodeData.vulnerabilities.length > 5) {
+                    html += `<div style="font-size: 11px; color: #666; margin-top: 8px;">
+                        ... and ${nodeData.vulnerabilities.length - 5} more vulnerabilities
+                    </div>`;
+                }
+
+                html += `</div>`;
+            }
+
+            detailsEl.innerHTML = html;
+            detailsEl.classList.add('show');
+        }
+
+        // Show tooltip
+        function showTooltip(nodeData, event) {
+            const tooltip = document.getElementById('tooltip');
+
+            let content = `<h4>${nodeData.fullLabel || nodeData.label || nodeData.id}</h4>`;
+            content += `<p><strong>Type:</strong> ${nodeData.type || 'Unknown'}</p>`;
+
+            if (nodeData.isVulnerable) {
+                content += `<p><strong>Status:</strong> <span style="color: #e74c3c;">Vulnerable</span></p>`;
+                if (nodeData.vulnerabilities) {
+                    content += `<p><strong>CVEs:</strong> ${nodeData.vulnerabilities.length}</p>`;
+                }
+            } else if (nodeData.isDependent) {
+                content += `<p><strong>Status:</strong> <span style="color: #f39c12;">Dependent on vulnerable</span></p>`;
+            } else {
+                content += `<p><strong>Status:</strong> <span style="color: #27ae60;">Safe</span></p>`;
+            }
+
+            // Add license information if available
+            if (nodeData.licenses && nodeData.licenses.length > 0) {
+                content += `<div style="margin-top: 10px; padding: 8px; background: rgba(248, 249, 250, 0.9); border-radius: 4px;">`;
+                content += `<strong style="color: #2c3e50;">Licenses:</strong><br>`;
+
+                nodeData.licenses.forEach(license => {
+                    let typeColor = '#6c757d';
+                    if (license.type === 'permissive') {
+                        typeColor = '#28a745';
+                    } else if (license.type === 'copyleft') {
+                        typeColor = '#ffc107';
+                    } else if (license.type === 'proprietary') {
+                        typeColor = '#dc3545';
+                    }
+
+                    content += `<span style="margin: 2px 0; display: block; font-size: 12px;">
+                        <strong>${license.name}</strong>
+                        <span style="color: ${typeColor};">(${license.type})</span>`;
+
+                    if (license.url) {
+                        content += ` <a href="${license.url}" target="_blank" style="font-size: 10px;">[info]</a>`;
+                    }
+
+                    content += `</span>`;
+                });
+
+                content += `</div>`;
+            }
+
+            tooltip.innerHTML = content;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY + 10) + 'px';
+        }
+
+        // Hide tooltip
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        // Apply filters to current visualization
+        function applyFilters() {
+            if (currentVisualization && currentVisualization.applyFilters) {
+                currentVisualization.applyFilters(filters, searchTerm);
+            }
+        }
+
+        // Reset zoom/view
+        function resetZoom() {
+            if (currentVisualization && currentVisualization.resetView) {
+                currentVisualization.resetView();
+            }
+        }
+
+        // Export SVG
+        function exportSVG() {
+            if (currentVisualization && currentVisualization.exportSVG) {
+                currentVisualization.exportSVG();
+            }
+        }
+
+        // Toggle fullscreen
+        function toggleFullscreen() {
+            const container = document.querySelector('.main-content');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen().catch(err => {
+                    console.error('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Placeholder visualization classes
+        class BaseVisualization {
+            constructor(data, container, options = {}) {
+                this.data = data;
+                this.container = container;
+                this.options = options;
+                this.svg = null;
+            }
+
+            render() {
+                // Base implementation - override in subclasses
+                const svg = d3.select(this.container);
+                svg.selectAll('*').remove();
+
+                const width = svg.node().clientWidth;
+                const height = svg.node().clientHeight;
+
+                svg.append('text')
+                    .attr('x', width / 2)
+                    .attr('y', height / 2)
+                    .attr('text-anchor', 'middle')
+                    .style('font-size', '18px')
+                    .style('fill', 'rgba(255, 255, 255, 0.8)')
+                    .text(`${this.constructor.name} implementation coming soon...`);
+            }
+
+            applyFilters(filters, searchTerm) {
+                // Override in subclasses
+            }
+
+            resetView() {
+                // Override in subclasses
+            }
+
+            exportSVG() {
+                // Override in subclasses
+                console.log('Export SVG not implemented for this visualization');
+            }
+
+            destroy() {
+                if (this.svg) {
+                    this.svg.selectAll('*').remove();
+                }
+            }
+        }
+
+        class ForceDirectedVisualization extends BaseVisualization {
+            constructor(data, container, options = {}) {
+                super(data, container, options);
+                this.simulation = null;
+                this.nodeElements = null;
+                this.linkElements = null;
+            }
+
+            render() {
+                console.log("ForceDirectedVisualization render() called with data:", this.data);
+
+                const svg = d3.select(this.container);
+                svg.selectAll('*').remove();
+
+                const width = svg.node().clientWidth || 800;
+                const height = svg.node().clientHeight || 600;
+
+                console.log(`SVG dimensions: ${width}x${height}`);
+
+                this.svg = svg.append('g');
+
+                // Get nodes and links from data
+                const nodes = this.data.data.nodes || [];
+                const links = this.data.data.links || [];
+
+                console.log(`Rendering ${nodes.length} nodes and ${links.length} links`);
+
+                if (nodes.length === 0) {
+                    console.warn("No nodes to render!");
+                    const message = svg.append('text')
+                        .attr('x', width / 2)
+                        .attr('y', height / 2)
+                        .attr('text-anchor', 'middle')
+                        .style('font-size', '16px')
+                        .style('fill', 'rgba(255, 255, 255, 0.8)')
+                        .text('No data to visualize');
+                    return;
+                }
+
+                // Identify isolated nodes (nodes with no links)
+                const connectedNodeIds = new Set();
+                links.forEach(link => {
+                    connectedNodeIds.add(link.source.id || link.source);
+                    connectedNodeIds.add(link.target.id || link.target);
+                });
+
+                const isolatedNodes = nodes.filter(node => !connectedNodeIds.has(node.id));
+                const connectedNodes = nodes.filter(node => connectedNodeIds.has(node.id));
+
+                console.log(`Found ${isolatedNodes.length} isolated nodes and ${connectedNodes.length} connected nodes`);
+
+                // Add cluster background BEFORE nodes so it renders behind them
+                if (isolatedNodes.length > 0) {
+                    const clusterX = width * 0.75;
+                    const clusterY = height * 0.25;
+                    const clusterRadius = Math.min(90, isolatedNodes.length * 3 + 35);
+
+                    // Add background circle for cluster (renders behind nodes)
+                    this.svg.append('circle')
+                        .attr('cx', clusterX)
+                        .attr('cy', clusterY)
+                        .attr('r', clusterRadius)
+                        .attr('fill', 'rgba(255, 255, 255, 0.05)')
+                        .attr('stroke', 'rgba(255, 255, 255, 0.3)')
+                        .attr('stroke-width', 1)
+                        .attr('stroke-dasharray', '3,3')
+                        .style('pointer-events', 'none'); // Make sure it doesn't block clicks
+                }
+
+                // Create links
+                this.linkElements = this.svg.selectAll('.link')
+                    .data(links)
+                    .enter()
+                    .append('line')
+                    .attr('class', 'link')
+                    .attr('stroke', d => d.color || '#999')
+                    .attr('stroke-width', d => d.width || 1)
+                    .attr('stroke-opacity', 0.6);
+
+                // Create nodes with improved styling
+                this.nodeElements = this.svg.selectAll('.node')
+                    .data(nodes)
+                    .enter()
+                    .append('circle')
+                    .attr('class', 'node')
+                    .attr('r', d => Math.max(6, (d.size || 20) / 3))
+                    .attr('fill', d => d.color || '#999')
+                    .attr('stroke', '#333')
+                    .attr('stroke-width', 1.5)
+                    .style('cursor', 'pointer')
+                    .on('click', (event, d) => {
+                        if (this.options.onNodeClick) {
+                            this.options.onNodeClick(d);
+                        }
+                    })
+                    .on('mouseover', (event, d) => {
+                        if (this.options.onNodeHover) {
+                            this.options.onNodeHover(d, event);
+                        }
+                    })
+                    .on('mouseout', () => {
+                        if (this.options.onNodeHover) {
+                            this.options.onNodeHover(null);
+                        }
+                    });
+
+                // Add labels with better contrast
+                const labelElements = this.svg.selectAll('.label')
+                    .data(nodes)
+                    .enter()
+                    .append('text')
+                    .attr('class', 'label')
+                    .attr('text-anchor', 'middle')
+                    .attr('dy', '0.3em')
+                    .style('font-size', '9px')
+                    .style('fill', 'white')
+                    .style('stroke', '#000')
+                    .style('stroke-width', '1px')
+                    .style('paint-order', 'stroke fill')
+                    .style('font-weight', 'bold')
+                    .style('pointer-events', 'none')
+                    .text(d => {
+                        // Truncate long labels to prevent overlap
+                        const label = d.label || d.id;
+                        return label.length > 12 ? label.substring(0, 10) + '...' : label;
+                    });
+
+                // Create simulation with custom force for isolated nodes
+                this.simulation = d3.forceSimulation(nodes)
+                    .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+                    .force('charge', d3.forceManyBody().strength(-400))
+                    .force('center', d3.forceCenter(width / 2, height / 2))
+                    .force('collision', d3.forceCollide().radius(d => (d.size || 20) / 2 + 15))
+                    .force('isolatedCluster', this.createIsolatedClusterForce(isolatedNodes, width, height));
+
+                this.simulation.on('tick', () => {
+                    this.linkElements
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    this.nodeElements
+                        .attr('cx', d => d.x)
+                        .attr('cy', d => d.y);
+
+                    labelElements
+                        .attr('x', d => d.x)
+                        .attr('y', d => d.y);
+                });
+
+                // Add zoom behavior
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 10])
+                    .on('zoom', (event) => {
+                        this.svg.attr('transform', event.transform);
+                    });
+
+                svg.call(zoom);
+
+                // Add label for isolated components cluster (positioned better)
+                if (isolatedNodes.length > 0) {
+                    const clusterX = width * 0.75;
+                    const clusterY = height * 0.25;
+                    const clusterRadius = Math.min(90, isolatedNodes.length * 3 + 35);
+
+                    // Add label positioned near the cluster center
+                    this.svg.append('text')
+                        .attr('x', clusterX)
+                        .attr('y', clusterY + clusterRadius + 20)
+                        .attr('text-anchor', 'middle')
+                        .style('font-size', '11px')
+                        .style('fill', 'rgba(255, 255, 255, 0.8)')
+                        .style('stroke', '#000')
+                        .style('stroke-width', '0.5px')
+                        .style('paint-order', 'stroke fill')
+                        .style('font-weight', 'bold')
+                        .style('pointer-events', 'none')
+                        .text(`Isolated Components (${isolatedNodes.length})`);
+                }
+            }
+
+            createIsolatedClusterForce(isolatedNodes, width, height) {
+                // Position isolated nodes in a cluster area (closer to main graph)
+                const clusterX = width * 0.75;
+                const clusterY = height * 0.25;
+                const clusterRadius = 60;
+
+                return () => {
+                    isolatedNodes.forEach((node, i) => {
+                        const angle = (i / isolatedNodes.length) * 2 * Math.PI;
+                        const radius = Math.min(clusterRadius, isolatedNodes.length * 3);
+                        const targetX = clusterX + Math.cos(angle) * radius;
+                        const targetY = clusterY + Math.sin(angle) * radius;
+
+                        node.vx += (targetX - node.x) * 0.1;
+                        node.vy += (targetY - node.y) * 0.1;
+                    });
+                };
+            }
+
+            applyFilters(filters, searchTerm) {
+                if (!this.nodeElements) return;
+
+                this.nodeElements
+                    .style('opacity', d => {
+                        if (searchTerm && !d.label.toLowerCase().includes(searchTerm)) {
+                            return 0.2;
+                        }
+                        if (!filters.showVulnerable && d.isVulnerable) {
+                            return 0.2;
+                        }
+                        if (!filters.showSafe && !d.isVulnerable && !d.isDependent) {
+                            return 0.2;
+                        }
+                        return 1;
+                    });
+            }
+
+            resetView() {
+                if (this.simulation) {
+                    this.simulation.alpha(1).restart();
+                }
+            }
+
+            destroy() {
+                if (this.simulation) {
+                    this.simulation.stop();
+                }
+                super.destroy();
+            }
+        }
+
+        class HierarchicalVisualization extends BaseVisualization {
+            // Implementation would go here
+        }
+
+        class CircularVisualization extends BaseVisualization {
+            // Implementation would go here
+        }
+
+        // Initialize visualization engines after classes are defined
+        visualizationEngines = {
+            'force-directed': ForceDirectedVisualization,
+            'hierarchical': HierarchicalVisualization,
+            'circular': CircularVisualization
+        };
+
+        // Initialize when DOM is loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            // DOM is already loaded
+            initializeApp();
+        }
+
+        // Also try initialization after a short delay as backup
+        setTimeout(() => {
+            if (!currentVisualization) {
+                console.log("Backup initialization triggered");
+                initializeApp();
+            }
+        }, 500);
+    </script>
+</body>
+</html>

@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SBOM Dependency Graph - Layered View</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* Content from assets/css/styles.css */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Common styles for both menus */
+        .expanded {
+            transform: translateX(0) !important;
+        }
+
+        /* Left menu styles */
+        #controls {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #controls.expanded {
+            transform: translateX(0);
+        }
+
+        #controls:not(.expanded) {
+            transform: translateX(calc(100% - 40px));
+        }
+
+        #toggle-controls {
+            position: absolute;
+            left: -40px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        #toggle-button {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px 0 0 4px;
+        }
+
+        #toggle-button i {
+            transition: transform 0.3s ease;
+        }
+
+        #controls:not(.expanded) #toggle-button i {
+            transform: rotate(180deg);
+        }
+
+        #controls-content {
+            width: 100%;
+        }
+
+        #controls h2 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 18px;
+            color: #333;
+        }
+
+        #graph-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #f5f5f5;
+        }
+
+        button {
+            padding: 8px 16px;
+            margin: 10px 0;
+            cursor: pointer;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #357abd;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            max-width: 300px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tooltip h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+
+        .tooltip p {
+            margin: 5px 0;
+            color: #666;
+        }
+
+        .tooltip small {
+            color: #888;
+        }
+
+        .node-label {
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .link {
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .node circle {
+            cursor: pointer;
+            transition: all 0.3s ease; /* Added 'all' for smooth transitions */
+            /* Default border removed, applied dynamically in JS */
+        }
+
+        .node.vulnerable circle {
+            fill: #FF5252 !important; /* Red fill - Ensure override */
+        }
+
+        .node.dependent circle {
+            fill: #FFA500 !important;  /* Yellow/Orange fill - Ensure override */
+        }
+
+        .node.sbom circle {
+            stroke: #000;
+            stroke-width: 3px;
+        }
+
+        .node text {
+            font-size: 12px;
+            text-anchor: middle;
+            pointer-events: none;
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+        }
+
+        .link.vulnerable {
+            stroke: #FF5252;
+            stroke-width: 2;
+            stroke-opacity: 1;
+        }
+
+        .link.dependent {
+            stroke: #FFA500;
+            stroke-width: 2;
+            stroke-opacity: 0.8;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            pointer-events: auto;
+            font-size: 14px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            max-width: 400px;
+            min-width: 200px;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+            max-height: 80vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0,0,0,0.2) transparent;
+        }
+
+        /* Webkit scrollbar styling */
+        .tooltip::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .tooltip::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .tooltip::-webkit-scrollbar-thumb {
+            background-color: rgba(0,0,0,0.2);
+            border-radius: 4px;
+        }
+
+        .tooltip::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(0,0,0,0.3);
+        }
+
+        .tooltip h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 16px;
+            word-wrap: break-word;
+        }
+
+        .tooltip p {
+            margin: 5px 0;
+            color: #666;
+            word-wrap: break-word;
+        }
+
+        .tooltip .vulnerability-info {
+            background-color: #fff5f5;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            word-wrap: break-word;
+        }
+
+        .tooltip .vulnerability-info h5 {
+            color: #d32f2f;
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+
+        .tooltip .vulnerability-info ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .tooltip .vulnerability-info li {
+            margin: 3px 0;
+            color: #d32f2f;
+            word-wrap: break-word;
+        }
+
+        .tooltip .dependency-warning {
+            background-color: #fff8e1;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            word-wrap: break-word;
+        }
+
+        .tooltip .dependency-warning h5 {
+            color: #ff8f00;
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+
+        .tooltip .license-info {
+            background-color: #f3e5f5;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            word-wrap: break-word;
+        }
+
+        .tooltip .license-info h5 {
+            color: #7b1fa2;
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+
+        .warning-icon {
+            font-family: "Font Awesome 5 Free";
+            font-weight: 900;
+            fill: #FFA500;
+            font-size: 14px;
+        }
+
+        /* Slider Styles */
+        input[type="range"].visibility-slider {
+            -webkit-appearance: none; /* Override default look */
+            appearance: none;
+            width: 60px; /* Adjust width as needed */
+            height: 15px; /* Adjust height */
+            cursor: pointer;
+            border-radius: 7px;
+            background: #ccc; /* Default background */
+            transition: background 0.2s ease;
+            vertical-align: middle;
+            margin-left: 10px;
+        }
+
+        /* Slider Thumb */
+        input[type="range"].visibility-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; /* Override default look */
+            appearance: none;
+            width: 15px; /* Thumb width */
+            height: 15px; /* Thumb height */
+            background: #777; /* Thumb color */
+            border-radius: 50%;
+        }
+
+        input[type="range"].visibility-slider::-moz-range-thumb {
+            width: 15px; /* Thumb width */
+            height: 15px; /* Thumb height */
+            background: #777; /* Thumb color */
+            border-radius: 50%;
+            border: none;
+        }
+
+        /* Slider On/Off States */
+        input[type="range"].visibility-slider.slider-on {
+             background: #7FD13B; /* Green background when on */
+        }
+         input[type="range"].visibility-slider.slider-on::-webkit-slider-thumb {
+             background: #5a9a2a; /* Darker green thumb when on */
+        }
+         input[type="range"].visibility-slider.slider-on::-moz-range-thumb {
+             background: #5a9a2a; /* Darker green thumb when on */
+        }
+
+        input[type="range"].visibility-slider.slider-off {
+             background: #ccc; /* Grey background when off */
+        }
+        input[type="range"].visibility-slider.slider-off::-webkit-slider-thumb {
+             background: #777; /* Grey thumb when off */
+        }
+        input[type="range"].visibility-slider.slider-off::-moz-range-thumb {
+             background: #777; /* Grey thumb when off */
+        }
+
+        .vulnerability-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #fff5f5;
+            border-radius: 4px;
+            border-left: 3px solid #ff5252;
+        }
+
+        .vulnerability-header {
+            margin-bottom: 8px;
+        }
+
+        .cvss-info {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .vulnerability-dates {
+            color: #666;
+            font-size: 0.8em;
+            margin: 5px 0;
+        }
+
+        .vulnerability-description {
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+
+        .references {
+            margin-top: 8px;
+            font-size: 0.9em;
+        }
+
+        .references ul {
+            margin: 5px 0;
+            padding-left: 15px;
+        }
+
+        .references a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        .references a:hover {
+            text-decoration: underline;
+        }
+
+        .control-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        }
+
+        .control-button:hover {
+            background-color: #0056b3;
+        }
+
+        .control-button i {
+            font-size: 16px;
+        }
+
+        #menu-toggle {
+            position: fixed;
+            right: 300px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 60px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px 0 0 8px;
+            cursor: pointer;
+            z-index: 9999;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: right 0.3s ease;
+        }
+
+        #menu-toggle:hover {
+            background: #0056b3;
+        }
+
+        #menu-toggle i {
+            font-size: 20px;
+        }
+
+        #controls.collapsed + #menu-toggle {
+            right: 0;
+            transition: right 0.3s ease;
+        }
+    </style>
+    <script>
+        // Parse the graph data
+        const graphData = JSON.parse('{{GRAPH_DATA|tojson|safe}}');
+
+        // --- Check for vulnerabilities and set vulnerable-edges slider default ---
+        const hasVulnerabilities = graphData.nodes && graphData.nodes.some(n => n.isVulnerable);
+
+        // --- Root node vulnerable dependency detection ---
+        // Find the root node (layer 0)
+        const rootNodeVulnCheck = graphData.nodes.find(d => d.layer === 0);
+        if (rootNodeVulnCheck) {
+            // Find all direct dependencies of the root node
+            const directDeps = graphData.links
+                .filter(l => l.source === rootNodeVulnCheck.id && l.relationship === 'direct')
+                .map(l => typeof l.target === 'object' ? l.target : graphData.nodes.find(n => n.id === l.target));
+            // Check if any direct dependency is vulnerable
+            rootNodeVulnCheck.hasVulnerableDependency = directDeps.some(dep => dep && dep.isVulnerable);
+        }
+
+        window.addEventListener('DOMContentLoaded', function() {
+            const vulnerableSlider = document.getElementById('vulnerable-edges');
+            if (vulnerableSlider) {
+                vulnerableSlider.value = hasVulnerabilities ? '1' : '0';
+                vulnerableSlider.classList.toggle('slider-on', hasVulnerabilities);
+                vulnerableSlider.classList.toggle('slider-off', !hasVulnerabilities);
+            }
+            // Initial call to set visibility based on default slider values
+            updateVisibility();
+        });
+    </script>
+</head>
+<body>
+    <div id="controls" class="expanded">
+        <div id="toggle-controls">
+            <button id="toggle-button" title="Toggle Menu">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+        </div>
+        <div id="controls-content">
+            <h2>SBOM Dependency Graph</h2>
+            <button id="reset-button">Reset View</button>
+            <div>
+               <small>Scroll to zoom, drag to pan</small>
+            </div>
+            <!-- Overview Statistics -->
+            <div class="overview-stats">
+                <h3>📊 Overview</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                    <div style="background: #f8f9fa; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: bold; color: #333;" id="total-components">0</div>
+                        <div style="font-size: 12px; color: #666;">Components</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: bold; color: #dc3545;" id="vulnerable-components">0</div>
+                        <div style="font-size: 12px; color: #666;">Vulnerable</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: bold; color: #28a745;" id="total-licenses">0</div>
+                        <div style="font-size: 12px; color: #666;">Licenses</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 18px; font-weight: bold; color: #6c757d;" id="critical-vulns">0</div>
+                        <div style="font-size: 12px; color: #666;">Critical CVEs</div>
+                    </div>
+                </div>
+                <!-- License Breakdown -->
+                <div id="license-breakdown" style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 8px 0; font-size: 14px;">License Types</h4>
+                    <div id="license-type-list" style="font-size: 12px;">
+                        <div>Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="edge-controls">
+                <h3>⚙️ Controls</h3>
+                <div class="toggle-control">
+                    <label for="direct-edges">Direct Dependencies</label>
+                    <input type="range" id="direct-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+                <div class="toggle-control">
+                    <label for="transitive-edges">Transitive Dependencies</label>
+                    <input type="range" id="transitive-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+                <div class="toggle-control">
+                    <label for="license-edges">License Connections</label>
+                    <input type="range" id="license-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+                <div class="toggle-control">
+                    <label for="vulnerable-edges">Vulnerable Paths</label>
+                    <input type="range" id="vulnerable-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="graph-container"></div>
+
+    <script>
+        // Set up the SVG container
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const radius = Math.min(width, height) / 3;
+
+        // Add toggle behavior for controls
+        const controls = document.getElementById('controls');
+        const toggleButton = document.getElementById('toggle-button');
+        const toggleIcon = toggleButton.querySelector('i');
+
+        toggleButton.addEventListener('click', () => {
+            controls.classList.toggle('expanded');
+
+            // Toggle icon direction
+            if (controls.classList.contains('expanded')) {
+                toggleIcon.classList.remove('fa-chevron-right');
+                toggleIcon.classList.add('fa-chevron-left');
+            } else {
+                toggleIcon.classList.remove('fa-chevron-left');
+                toggleIcon.classList.add('fa-chevron-right');
+            }
+        });
+
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .style("background-color", "#ffffff");
+
+        // Create tooltip div
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0)
+            .style("pointer-events", "none") // Start non-interactive
+            .style("display", "none");      // Start hidden
+
+        let hideTooltipTimer = null;
+
+        function showTooltip(event, d) {
+            clearTimeout(hideTooltipTimer); // Cancel any pending hide
+            tooltip.style("pointer-events", "auto") // Make interactive
+                   .style("display", "block"); // Make visible in layout
+
+            // Generate tooltip content (reuse existing logic)
+            let tooltipContent = `<h4>${d.fullLabel}</h4>`;
+
+            // Add description if available
+            if (d.description) {
+                tooltipContent += `<p>${d.description}</p>`;
+            }
+
+            // --- Add GNN Prediction Info to Tooltip (moved to top) ---
+            if (d.type !== 'LICENSE' && d.gnnPrediction && d.gnnPrediction !== 'Unknown' && d.gnnPrediction !== 'Error') {
+                const confidencePercent = (d.gnnConfidence * 100).toFixed(1);
+                let gnnColor = d.gnnPrediction === 'Vulnerable' ? '#E69500' : '#28a745';
+                tooltipContent += `
+                    <div style="background-color: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 10px;">
+                        <h5 style="margin: 0 0 5px 0; font-size: 14px;">GNN Analysis</h5>
+                        <p style="margin: 3px 0;">Prediction: <strong style="color:${gnnColor};">${d.gnnPrediction}</strong></p>
+                        <p style="margin: 3px 0;">Confidence: ${confidencePercent}%</p>
+                    </div>`;
+            } else if (d.type !== 'LICENSE') {
+                 tooltipContent += `
+                    <div style="background-color: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 10px;">
+                        <h5 style="margin: 0 0 5px 0; font-size: 14px;">GNN Analysis</h5>
+                        <p style="margin: 3px 0;">Prediction: Not Available</p>
+                    </div>`;
+            }
+            // --- End GNN Prediction Info ---
+
+            // Add license information if available
+            if (d.licenses && d.licenses.length > 0) {
+                tooltipContent += `
+                    <div class="license-info" style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 10px;">
+                        <h5 style="margin: 0 0 5px 0; font-size: 14px;">License Information</h5>`;
+
+                d.licenses.forEach(license => {
+                    let typeStyle = '';
+                    if (license.type === 'permissive') {
+                        typeStyle = 'color: #28a745;'; // Green for permissive
+                    } else if (license.type === 'copyleft') {
+                        typeStyle = 'color: #ffc107;'; // Yellow for copyleft
+                    } else if (license.type === 'proprietary') {
+                        typeStyle = 'color: #dc3545;'; // Red for proprietary
+                    }
+
+                    tooltipContent += `<p style="margin: 3px 0;">
+                        <strong>${license.name}</strong>
+                        <span style="font-size: 12px; ${typeStyle}">(${license.type})</span>`;
+
+                    if (license.url) {
+                        tooltipContent += ` <a href="${license.url}" target="_blank" style="font-size: 11px;">[details]</a>`;
+                    }
+
+                    tooltipContent += `</p>`;
+                });
+
+                tooltipContent += `</div>`;
+            }
+
+            // Handle different node types
+            if (d.isVulnerable && d.vulnerabilities && d.vulnerabilities.length > 0) {
+                tooltipContent += `
+                    <div class="vulnerability-info">
+                        <h5>Vulnerability Details</h5>
+                        <ul>`;
+
+                d.vulnerabilities.forEach(vuln => {
+                    // Format dates if available
+                    const publishedDate = vuln.published_date ? new Date(vuln.published_date).toLocaleDateString() : 'Unknown';
+                    const modifiedDate = vuln.modified_date ? new Date(vuln.modified_date).toLocaleDateString() : 'Unknown';
+
+                    // Format CVSS information
+                    let cvssInfo = '';
+                    if (vuln.cvss_score || vuln.cvss_severity || vuln.cvss_vector) {
+                        cvssInfo = `
+                            <div class="cvss-info">
+                                <strong>CVSS:</strong> ${vuln.cvss_score || 'N/A'} (${vuln.cvss_severity || 'Unknown'})<br>
+                                <small>Vector: ${vuln.cvss_vector || 'N/A'}</small>
+                            </div>`;
+                    }
+
+                    // Format references if available
+                    let referencesHtml = '';
+                    if (vuln.references && vuln.references.length > 0) {
+                        referencesHtml = `
+                            <div class="references">
+                                <strong>References:</strong>
+                                <ul>`;
+                        vuln.references.forEach(ref => {
+                            referencesHtml += `<li><a href="${ref.url}" target="_blank">${ref.type}: ${ref.url}</a></li>`;
+                        });
+                        referencesHtml += `</ul></div>`;
+                    }
+
+                    tooltipContent += `
+                        <li class="vulnerability-item">
+                            <div class="vulnerability-header">
+                                <strong>${vuln.id || vuln.source_id}</strong>
+                                ${cvssInfo}
+                            </div>
+                            <div class="vulnerability-dates">
+                                <small>Published: ${publishedDate}</small><br>
+                                <small>Modified: ${modifiedDate}</small>
+                            </div>
+                            <div class="vulnerability-description">
+                                ${vuln.description || 'No description available'}
+                            </div>
+                            ${referencesHtml}
+                        </li>`;
+                });
+
+                tooltipContent += `
+                        </ul>
+                    </div>`;
+            } else if (d.isDependent) {
+                tooltipContent += `
+                    <div class="dependency-warning">
+                        <h5>Dependency Warning</h5>
+                        <p>This package depends on vulnerable components.
+                           Consider updating or replacing dependencies.</p>
+                    </div>`;
+            } else {
+                tooltipContent += `<p>No known vulnerabilities at this time.</p>`;
+            }
+
+            tooltip.html(tooltipContent);
+
+            // Position tooltip (reuse existing logic)
+            const tooltipRect = tooltip.node().getBoundingClientRect();
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+
+            let left = event.pageX + 10;
+            let top = event.pageY - 10;
+
+            if (left + tooltipRect.width > windowWidth) {
+                left = windowWidth - tooltipRect.width - 10;
+            }
+            if (top + tooltipRect.height > windowHeight) {
+                top = windowHeight - tooltipRect.height - 10;
+            }
+            if (top < 10) {
+                top = 10;
+            }
+
+            tooltip
+                .style("left", left + "px")
+                .style("top", top + "px");
+
+            // Start fade-in transition
+            tooltip.transition()
+                .duration(200)
+                .style("opacity", 0.95);
+        }
+
+        function hideTooltip() {
+            clearTimeout(hideTooltipTimer); // Clear timer in case called directly
+            tooltip.style("pointer-events", "none"); // Make non-interactive immediately
+            tooltip.transition()
+                .duration(300)
+                .style("opacity", 0)
+                .on("end", function() {
+                    // Check opacity again in case a show was triggered during fade-out
+                    if (+d3.select(this).style("opacity") === 0) {
+                       d3.select(this).style("display", "none"); // Hide after fade
+                    }
+                });
+        }
+
+        // Create a group for the zoom transformation
+        const g = svg.append("g");
+
+        // Add zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
+
+        // Calculate max layer
+        const maxLayer = Math.max(...graphData.nodes.map(d => d.layer));
+
+        // Define layer colors with better transparency
+        const layerColors = [
+            'rgba(248, 249, 250, 0.4)',  // Layer 0 (SBOM) - Very light gray
+            'rgba(227, 242, 253, 0.4)',  // Layer 1 (Direct deps) - Very light blue
+            'rgba(232, 245, 233, 0.4)',  // Layer 2 (Transitive deps) - Very light green
+            'rgba(255, 243, 224, 0.4)',  // Layer 3 (Other libs) - Very light orange
+            'rgba(252, 228, 236, 0.4)'   // Layer 4 (Licenses) - Very light pink
+        ];
+
+        // Calculate and update statistics
+        function updateSidebarStats() {
+            const totalComponents = graphData.nodes.filter(d => d.type === 'LIBRARY').length;
+            const vulnerableComponents = graphData.nodes.filter(d => d.isVulnerable).length;
+
+            // Collect license information
+            const licenseStats = {};
+            let totalLicenseCount = 0;
+
+            graphData.nodes.forEach(node => {
+                if (node.licenses && node.licenses.length > 0) {
+                    node.licenses.forEach(license => {
+                        const type = license.type || 'unknown';
+                        if (!licenseStats[type]) {
+                            licenseStats[type] = { count: 0, licenses: new Set() };
+                        }
+                        licenseStats[type].count++;
+                        licenseStats[type].licenses.add(license.name);
+                        totalLicenseCount++;
+                    });
+                }
+            });
+
+            const uniqueLicenses = new Set();
+            graphData.nodes.forEach(node => {
+                if (node.licenses && node.licenses.length > 0) {
+                    node.licenses.forEach(license => uniqueLicenses.add(license.name));
+                }
+            });
+
+            // Count critical vulnerabilities
+            let criticalVulns = 0;
+            graphData.nodes.forEach(node => {
+                if (node.vulnerabilities && node.vulnerabilities.length > 0) {
+                    node.vulnerabilities.forEach(vuln => {
+                        if (vuln.cvss_severity && vuln.cvss_severity.toLowerCase() === 'critical') {
+                            criticalVulns++;
+                        }
+                    });
+                }
+            });
+
+            // Update display elements
+            document.getElementById('total-components').textContent = totalComponents;
+            document.getElementById('vulnerable-components').textContent = vulnerableComponents;
+            document.getElementById('total-licenses').textContent = uniqueLicenses.size;
+            document.getElementById('critical-vulns').textContent = criticalVulns;
+
+            // Update license breakdown
+            const licenseTypeList = document.getElementById('license-type-list');
+            if (Object.keys(licenseStats).length > 0) {
+                const typeColors = {
+                    'permissive': '#28a745',
+                    'copyleft': '#ffc107',
+                    'proprietary': '#dc3545',
+                    'unknown': '#6c757d'
+                };
+
+                const sortedTypes = Object.entries(licenseStats).sort((a, b) => b[1].licenses.size - a[1].licenses.size);
+                const typeHtml = sortedTypes.map(([type, data]) => {
+                    const color = typeColors[type] || '#6c757d';
+                    return `<div style="margin: 2px 0; color: ${color};">
+                        <strong>${type}</strong>: ${data.licenses.size} unique license${data.licenses.size !== 1 ? 's' : ''}
+                    </div>`;
+                }).join('');
+
+                licenseTypeList.innerHTML = typeHtml;
+            } else {
+                licenseTypeList.innerHTML = '<div style="color: #6c757d;">No license information available</div>';
+            }
+        }
+
+        // Update sidebar statistics
+        updateSidebarStats();
+
+        // Create the force simulation
+        const simulation = d3.forceSimulation(graphData.nodes)
+            .force("link", d3.forceLink(graphData.links)
+                .id(d => d.id)
+                .distance(d => {
+                    // Shorter distances for vulnerable connections
+                    if (d.isVulnerableConnection || d.isDependentConnection) {
+                        return 50;
+                    }
+                    // Longer distances for license connections
+                    if (d.relationship === 'license') {
+                        return 150;
+                    }
+                    // Default distance based on layer
+                    return 80 + (d.source.layer + d.target.layer) * 20;
+                }))
+            .force("charge", d3.forceManyBody()
+                .strength(d => {
+                    // Stronger repulsion for vulnerable and dependent nodes
+                    if (d.isVulnerable || d.isDependent) {
+                        return -2000;
+                    }
+                    // Weaker repulsion for license nodes
+                    if (d.type === 'LICENSE') {
+                        return -500;
+                    }
+                    // Default repulsion
+                    return -1000;
+                }))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide()
+                .radius(d => {
+                    // Larger collision radius for vulnerable and dependent nodes
+                    if (d.isVulnerable || d.isDependent) {
+                        return d.size + 20;
+                    }
+                    return d.size + 10;
+                }))
+            .force("radial", d3.forceRadial(d => {
+                // Calculate radius based on layer, with vulnerable nodes closer to center
+                const baseRadius = radius * ((d.layer + 1) / (maxLayer + 1));
+                if (d.isVulnerable) {
+                    return baseRadius * 0.6; // Pull vulnerable nodes closer to center
+                }
+                if (d.isDependent) {
+                    return baseRadius * 0.8; // Pull dependent nodes somewhat closer
+                }
+                if (d.type === 'LICENSE') {
+                    return baseRadius * 1.2; // Push license nodes further out
+                }
+                return baseRadius;
+            }, width / 2, height / 2).strength(1));
+
+        // Fix the root node to the center initially
+        const rootNode = graphData.nodes.find(d => d.layer === 0);
+        if (rootNode) {
+            rootNode.fx = width / 2;
+            rootNode.fy = height / 2;
+        }
+
+        // Create the links with straight lines
+        const link = g.append("g")
+            .selectAll("line")
+            .data(graphData.links)
+            .join("line")
+            .attr("class", d => `link ${d.relationship}`)
+            .attr("stroke", d => {
+                let color = d.color;
+                if (d.relationship === 'license') {
+                    color = d.color;
+                } else if (d.isDependentConnection) {
+                    color = '#FFA500';
+                } else if (d.isVulnerableConnection) {
+                    color = '#FF5252';
+                }
+                return color;
+            })
+            .attr("stroke-width", d => {
+                let width = d.weight;
+                if (d.relationship === 'license') {
+                    width = d.weight;
+                } else if (d.isDependentConnection || d.isVulnerableConnection) {
+                    width = d.weight * 2;
+                }
+                return width;
+            })
+            .style("stroke-dasharray", d => {
+                switch(d.relationship) {
+                    case 'transitive': return "5,5";
+                    case 'license': return "2,2";
+                    default: return null;
+                }
+            })
+            .style("opacity", d => {
+                let opacity = 0.6;
+                if (d.relationship === 'license') {
+                    opacity = 0.6;
+                } else if (d.isDependentConnection || d.isVulnerableConnection) {
+                    opacity = 1;
+                }
+                return opacity;
+            });
+
+        // Create the nodes with improved interaction
+        const node = g.append("g")
+            .selectAll("g")
+            .data(graphData.nodes)
+            .join("g")
+            .attr("class", d => {
+                let classes = "node";
+                if (d.type === 'SBOM') classes += " sbom";
+                else if (d.type === 'LICENSE') classes += " license";
+                // Add classes based on vulnerability status
+                if (d.isVulnerable) classes += " vulnerable";
+                if (d.isDependent) classes += " dependent";
+                return classes;
+            })
+            .call(drag(simulation))
+            // --- Node Interaction ---
+            .on("mouseenter", function(event, d) {
+                showTooltip(event, d);
+            })
+            .on("mouseleave", function(event, d) {
+                // Start timer to hide tooltip
+                clearTimeout(hideTooltipTimer);
+                hideTooltipTimer = setTimeout(hideTooltip, 100); // Hide after 100ms unless cancelled
+            });
+            // --- Remove previous complex mouseover/mouseout ---
+            /*
+            .on("mouseover", function(event, d) { ... })
+            .on("mouseout", function(event, d) { ... });
+            */
+
+        // --- Tooltip Interaction ---
+        tooltip
+            .on("mouseenter", function() {
+                // Cancel hide timer when mouse enters tooltip
+                clearTimeout(hideTooltipTimer);
+            })
+            .on("mouseleave", function() {
+                // Hide immediately (or start timer again) when mouse leaves tooltip
+                hideTooltip(); // Immediate hide seems best here
+            });
+
+        // Add circles to nodes with hover effects
+        node.append("circle")
+            .attr("r", d => {
+                // Make vulnerable nodes slightly larger
+                if (d.isVulnerable) return d.size / 2 + 5;
+                return d.size / 2;
+            })
+            .attr("fill", d => {
+                // Only set default fills here. CSS will override for vulnerable/dependent.
+                if (d.isVulnerable || d.isDependent) {
+                     return null; // Let CSS handle these via !important rules
+                }
+                // --- Root node color logic ---
+                if (d.layer === 0 && d.hasVulnerableDependency) return '#FFA500'; // Orange if root has vulnerable dep
+                if (d.layer === 0) return '#4a90e2'; // Default blue for root (if not vuln/dep)
+                if (d.type === 'LICENSE') return d.color; // Use data color for licenses
+                return d.color; // Use data color for others
+            })
+            .style("stroke", d => {
+                // GNN Border Color Logic: Green(0%) -> Red(100%) confidence
+                if (d.type === 'LICENSE' || d.gnnConfidence === undefined) {
+                    return '#6c757d'; // Default grey for License or missing confidence
+                }
+                const confidence = d.gnnConfidence || 0;
+                const colorInterpolator = d3.interpolateRgb("#90EE90", "#B22222");
+                return colorInterpolator(confidence);
+            })
+            .attr("stroke-width", d => {
+                // Consistent stroke width with hierarchical
+                if (d.type === 'LICENSE') return 1.5;
+                const hasValidGNN = d.gnnConfidence !== undefined && d.gnnPrediction !== 'Unknown' && d.gnnPrediction !== 'Error';
+                return hasValidGNN ? 2.5 : 1.5;
+            })
+            .attr("stroke-dasharray", d => {
+                // Consistent stroke dasharray with hierarchical
+                 if (d.type === 'LICENSE') return null;
+                 const hasValidGNN = d.gnnConfidence !== undefined && d.gnnPrediction !== 'Unknown' && d.gnnPrediction !== 'Error';
+                 return hasValidGNN ? "4,4" : null;
+            });
+
+        // Create a separate group for labels to ensure they're always on top
+        const labels = g.append("g")
+            .selectAll("g")
+            .data(graphData.nodes)
+            .join("g")
+            .attr("transform", d => `translate(${d.x},${d.y})`)
+            .style("pointer-events", "none");  // Prevent labels from interfering with node interactions
+
+        // Add node labels with white background for better visibility
+        labels.append("text")
+            .attr("dy", d => d.size / 2 + 15)
+            .text(d => d.label)
+            .attr("text-anchor", "middle")
+            .style("font-size", "12px")
+            .style("fill", "#333")
+            .style("paint-order", "stroke")
+            .style("stroke", "white")
+            .style("stroke-width", "3px")
+            .style("stroke-linecap", "butt")
+            .style("stroke-linejoin", "miter")
+            .style("font-weight", "bold");
+
+        // Define drag behavior
+        function drag(simulation) {
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
+            }
+
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
+            }
+
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                // If it's the root node, fix it back to center, otherwise release it
+                if (event.subject.layer === 0) {
+                    event.subject.fx = width / 2; // Use current width
+                    event.subject.fy = height / 2; // Use current height
+                } else {
+                    event.subject.fx = null;
+                    event.subject.fy = null;
+                }
+            }
+
+            return d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+        }
+
+        // Update positions on each tick with straight lines
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node.attr("transform", d => `translate(${d.x},${d.y})`);
+
+            // Update label positions to match their nodes
+            labels.attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+
+        // Adjust simulation forces for better spacing
+        simulation
+            .force("link")
+            .distance(d => 100 + (d.source.size + d.target.size) / 2);  // Dynamic link distance based on node sizes
+
+        simulation
+            .force("charge")
+            .strength(d => -1000 - d.size * 10);  // Stronger repulsion for larger nodes
+
+        simulation
+            .force("collision")
+            .radius(d => d.size / 2 + 20);  // Increased collision radius for better spacing
+
+        // Add a flag to track if this is the initial load
+        let isInitialLoad = true;
+
+        function updateVisibility() {
+            const sliders = {
+                direct: d3.select("#direct-edges"),
+                transitive: d3.select("#transitive-edges"),
+                license: d3.select("#license-edges"),
+                vulnerable: d3.select("#vulnerable-edges")
+            };
+
+            const showDirect = sliders.direct.property("value") == "1";
+            const showTransitive = sliders.transitive.property("value") == "1";
+            const showLicense = sliders.license.property("value") == "1";
+            const highlightVulnerable = sliders.vulnerable.property("value") == "1";
+
+            // Update slider appearance
+            sliders.direct.classed("slider-on", showDirect).classed("slider-off", !showDirect);
+            sliders.transitive.classed("slider-on", showTransitive).classed("slider-off", !showTransitive);
+            sliders.license.classed("slider-on", showLicense).classed("slider-off", !showLicense);
+            sliders.vulnerable.classed("slider-on", highlightVulnerable).classed("slider-off", !highlightVulnerable);
+
+            // --- Link Visibility ---
+            link.style("display", d => {
+                if (d.relationship === 'direct' && !showDirect) return "none";
+                if (d.relationship === 'transitive' && !showTransitive) return "none";
+                if (d.relationship === 'license' && !showLicense) return "none";
+                return null; // Default display
+            });
+
+            // --- Node and Link Opacity for Vulnerability Highlighting ---
+            if (highlightVulnerable) {
+                // Get IDs of vulnerable nodes and their direct non-license neighbors
+                const vulnerableNodeIds = new Set(graphData.nodes.filter(n => n.isVulnerable).map(n => n.id));
+                const directlyConnectedIds = new Set();
+                const vulnerableLinkEndpoints = new Set(); // Store endpoints of vulnerable/dependent links
+
+                graphData.links.forEach(l => {
+                    const sourceIsVuln = vulnerableNodeIds.has(l.source.id);
+                    const targetIsVuln = vulnerableNodeIds.has(l.target.id);
+
+                    if (sourceIsVuln || targetIsVuln) {
+                         // Add both endpoints of the link if it involves a vulnerable node
+                         vulnerableLinkEndpoints.add(l.source.id);
+                         vulnerableLinkEndpoints.add(l.target.id);
+
+                         // Add direct non-license neighbors
+                        if (sourceIsVuln && !targetIsVuln && l.target.type !== 'LICENSE') {
+                            directlyConnectedIds.add(l.target.id);
+                        }
+                        if (targetIsVuln && !sourceIsVuln && l.source.type !== 'LICENSE') {
+                            directlyConnectedIds.add(l.source.id);
+                        }
+                    }
+                });
+
+                const allHighlightedNodeIds = new Set([...vulnerableNodeIds, ...directlyConnectedIds]);
+
+                // Apply opacity with transition only if not initial load
+                if (!isInitialLoad) {
+                    node.transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)  // Use cubic easing for smoother transition
+                        .style("opacity", d => allHighlightedNodeIds.has(d.id) ? 1 : 0.1);
+
+                    // Dim text labels for non-highlighted nodes
+                    labels.selectAll("text")
+                        .transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)
+                        .style("opacity", d => allHighlightedNodeIds.has(d.id) ? 1 : 0.2)
+                        .style("fill", d => allHighlightedNodeIds.has(d.id) ? "#333" : "#999");
+
+                    link.transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)  // Use cubic easing for smoother transition
+                        .style("opacity", d => {
+                            // First, check if the link type is even allowed by the toggles
+                            if (d.relationship === 'direct' && !showDirect) return 0;
+                            if (d.relationship === 'transitive' && !showTransitive) return 0;
+                            if (d.relationship === 'license' && !showLicense) return 0;
+
+                            // Check if BOTH endpoints are part of the highlighted node set
+                            const sourceIsHighlighted = allHighlightedNodeIds.has(d.source.id);
+                            const targetIsHighlighted = allHighlightedNodeIds.has(d.target.id);
+
+                            if (sourceIsHighlighted && targetIsHighlighted) {
+                                // Link connects two highlighted nodes, make it fully visible
+                                 let baseOpacity = 1;
+                                 // Optional: slightly dim license links even when highlighted?
+                                 // if (d.relationship === 'license') { baseOpacity = 0.6; }
+                                 // Use the vulnerability/dependency highlighting if applicable
+                                 if (d.isDependentConnection || d.isVulnerableConnection) {
+                                     baseOpacity = 1; // Ensure these remain fully opaque
+                                 }
+                                 return baseOpacity;
+                            } else {
+                                // Link connects to at least one non-highlighted node, dim it significantly
+                                return 0.05; // Very low opacity
+                            }
+                        });
+                } else {
+                    // On initial load, set opacity directly without transition
+                    node.style("opacity", d => allHighlightedNodeIds.has(d.id) ? 1 : 0.1);
+
+                    // Dim text labels for non-highlighted nodes
+                    labels.selectAll("text")
+                        .style("opacity", d => allHighlightedNodeIds.has(d.id) ? 1 : 0.2)
+                        .style("fill", d => allHighlightedNodeIds.has(d.id) ? "#333" : "#999");
+
+                    link.style("opacity", d => {
+                        // First, check if the link type is even allowed by the toggles
+                        if (d.relationship === 'direct' && !showDirect) return 0;
+                        if (d.relationship === 'transitive' && !showTransitive) return 0;
+                        if (d.relationship === 'license' && !showLicense) return 0;
+
+                        // Check if BOTH endpoints are part of the highlighted node set
+                        const sourceIsHighlighted = allHighlightedNodeIds.has(d.source.id);
+                        const targetIsHighlighted = allHighlightedNodeIds.has(d.target.id);
+
+                        if (sourceIsHighlighted && targetIsHighlighted) {
+                            // Link connects two highlighted nodes, make it fully visible
+                             let baseOpacity = 1;
+                             // Optional: slightly dim license links even when highlighted?
+                             // if (d.relationship === 'license') { baseOpacity = 0.6; }
+                             // Use the vulnerability/dependency highlighting if applicable
+                             if (d.isDependentConnection || d.isVulnerableConnection) {
+                                 baseOpacity = 1; // Ensure these remain fully opaque
+                             }
+                             return baseOpacity;
+                        } else {
+                            // Link connects to at least one non-highlighted node, dim it significantly
+                            return 0.05; // Very low opacity
+                        }
+                    });
+                }
+
+            } else {
+                // Reset opacity with transition only if not initial load
+                if (!isInitialLoad) {
+                    node.transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)  // Use cubic easing for smoother transition
+                        .style("opacity", 1);
+
+                    // Reset text labels to full opacity and original color
+                    labels.selectAll("text")
+                        .transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)
+                        .style("opacity", 1)
+                        .style("fill", "#333");
+
+                    link.transition()
+                        .duration(500)
+                        .ease(d3.easeCubicInOut)  // Use cubic easing for smoother transition
+                        .style("opacity", d => {
+                            // Check edge type visibility controls first
+                            if (d.relationship === 'direct' && !showDirect) return 0;
+                            if (d.relationship === 'transitive' && !showTransitive) return 0;
+                            if (d.relationship === 'license' && !showLicense) return 0;
+
+                            // Default opacity logic when not highlighting vulnerabilities
+                            let opacity = 0.6;
+                            if (d.relationship === 'license') {
+                                opacity = 0.6; // Base opacity for license links
+                            } else if (d.isDependentConnection || d.isVulnerableConnection) {
+                                opacity = 1; // Higher opacity for important links
+                            }
+                            return opacity;
+                        });
+                } else {
+                    // On initial load (or reset), set opacity directly without transition
+                    node.style("opacity", 1);
+
+                    // Reset text labels to full opacity and original color
+                    labels.selectAll("text")
+                        .style("opacity", 1)
+                        .style("fill", "#333");
+
+                    link.style("opacity", d => {
+                         // Check edge type visibility controls first
+                         if (d.relationship === 'direct' && !showDirect) return 0;
+                         if (d.relationship === 'transitive' && !showTransitive) return 0;
+                         if (d.relationship === 'license' && !showLicense) return 0;
+
+                         // Default opacity logic when not highlighting vulnerabilities
+                         let opacity = 0.6;
+                         if (d.relationship === 'license') {
+                             opacity = 0.6; // Base opacity for license links
+                         } else if (d.isDependentConnection || d.isVulnerableConnection) {
+                             opacity = 1; // Higher opacity for important links
+                         }
+                         return opacity;
+                    });
+                }
+            }
+
+            // After first update, set isInitialLoad to false
+            isInitialLoad = false;
+        }
+
+        // Add event listeners to sliders
+        d3.select("#direct-edges").on("input", updateVisibility);
+        d3.select("#transitive-edges").on("input", updateVisibility);
+        d3.select("#license-edges").on("input", updateVisibility);
+        d3.select("#vulnerable-edges").on("input", updateVisibility);
+
+        // Initial call to set visibility based on default slider values
+        updateVisibility();
+
+        // --- Reset Button ---
+        d3.select("#reset-button").on("click", () => {
+            // Reset sliders to default (visible)
+            d3.select("#direct-edges").property("value", "1");
+            d3.select("#transitive-edges").property("value", "1");
+            d3.select("#license-edges").property("value", "1");
+            d3.select("#vulnerable-edges").property("value", "1"); // Ensure default is highlighting
+
+            // Update visibility and slider appearance based on reset sliders
+            updateVisibility();
+
+            // Reset zoom and pan
+            svg.transition().duration(750).call(
+                zoom.transform,
+                d3.zoomIdentity, // Reset to identity transform
+                d3.zoomTransform(svg.node()).invert([width / 2, height / 2]) // Center view
+            );
+        });
+
+        // Handle window resize
+        window.addEventListener("resize", () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const radius = Math.min(width, height) / 3;
+
+            svg.attr("width", width)
+               .attr("height", height);
+
+            simulation
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("radial", d3.forceRadial(d => radius * ((d.layer + 1) / (maxLayer + 1)), width / 2, height / 2).strength(1));
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Ruff: check",
+      "type": "shell",
+      "command": "uv run ruff check src tests",
+      "problemMatcher": []
+    },
+    {
+      "label": "Ruff: check (fix)",
+      "type": "shell",
+      "command": "uv run ruff check src tests --fix",
+      "problemMatcher": []
+    },
+    {
+      "label": "Ruff: format",
+      "type": "shell",
+      "command": "uv run ruff format src tests",
+      "problemMatcher": []
+    },
+    {
+      "label": "Ruff: format (check)",
+      "type": "shell",
+      "command": "uv run ruff format src tests --check",
+      "problemMatcher": []
+    },
+    {
+      "label": "Ty: check",
+      "type": "shell",
+      "command": "uv run ty check src",
+      "problemMatcher": []
+    },
+    {
+      "label": "Pytest",
+      "type": "shell",
+      "command": "uv run pytest",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}
+
+
+
+
+

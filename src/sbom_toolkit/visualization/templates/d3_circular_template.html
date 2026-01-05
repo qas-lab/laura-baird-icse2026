@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SBOM Circular Dependency Graph</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        #controls {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #controls.expanded {
+            transform: translateX(0);
+        }
+
+        #controls:not(.expanded) {
+            transform: translateX(calc(100% - 40px));
+        }
+
+        #toggle-controls {
+            position: absolute;
+            left: -40px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        #toggle-button {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px 0 0 4px;
+        }
+
+        #graph-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ffffff;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            pointer-events: auto;
+            font-size: 14px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            max-width: 400px;
+            min-width: 200px;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+            max-height: 80vh;
+            overflow-y: auto;
+            opacity: 0;
+            display: none;
+        }
+
+        .node circle {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .node.vulnerable circle {
+            fill: #FF5252 !important;
+        }
+
+        .node.dependent circle {
+            fill: #FFA500 !important;
+        }
+
+        .node text {
+            font-size: 12px;
+            text-anchor: middle;
+            pointer-events: none;
+            paint-order: stroke;
+            stroke: white;
+            stroke-width: 3px;
+            font-weight: bold;
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .vulnerability-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #fff5f5;
+            border-radius: 4px;
+            border-left: 3px solid #ff5252;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls" class="expanded">
+        <div id="toggle-controls">
+            <button id="toggle-button" title="Toggle Menu">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+        </div>
+        <div id="controls-content">
+            <h2>SBOM Circular Graph</h2>
+            <button id="reset-button">Reset View</button>
+            <div>
+               <small>Scroll to zoom, drag to pan</small>
+            </div>
+            <div class="edge-controls">
+                <h3>Edge Visibility</h3>
+                <div class="toggle-control">
+                    <label for="direct-edges">Direct Dependencies</label>
+                    <input type="range" id="direct-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+                <div class="toggle-control">
+                    <label for="transitive-edges">Transitive Dependencies</label>
+                    <input type="range" id="transitive-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+                <div class="toggle-control">
+                    <label for="license-edges">License Connections</label>
+                    <input type="range" id="license-edges" class="visibility-slider" min="0" max="1" step="1" value="1">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="graph-container"></div>
+
+    <script>
+        // Parse the graph data
+        const graphData = {{GRAPH_DATA}};
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const radius = Math.min(width, height) / 3;
+
+        // Add toggle behavior for controls
+        const controls = document.getElementById('controls');
+        const toggleButton = document.getElementById('toggle-button');
+        const toggleIcon = toggleButton.querySelector('i');
+
+        toggleButton.addEventListener('click', () => {
+            controls.classList.toggle('expanded');
+
+            if (controls.classList.contains('expanded')) {
+                toggleIcon.classList.remove('fa-chevron-right');
+                toggleIcon.classList.add('fa-chevron-left');
+            } else {
+                toggleIcon.classList.remove('fa-chevron-left');
+                toggleIcon.classList.add('fa-chevron-right');
+            }
+        });
+
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip");
+
+        const g = svg.append("g");
+
+        // Add zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
+
+        // Calculate max layer for radial positioning
+        const maxLayer = Math.max(...graphData.nodes.map(d => d.layer));
+
+                 // Position nodes in concentric circles based on their layer
+        graphData.nodes.forEach((d, i) => {
+            const layerRadius = (radius * (d.layer + 1)) / (maxLayer + 1);
+            const nodesInLayer = graphData.nodes.filter(n => n.layer === d.layer);
+            const angleStep = (2 * Math.PI) / nodesInLayer.length;
+            const nodeIndex = nodesInLayer.indexOf(d);
+            const angle = nodeIndex * angleStep;
+
+            d.x = width / 2 + layerRadius * Math.cos(angle);
+            d.y = height / 2 + layerRadius * Math.sin(angle);
+            d.fx = d.x;
+            d.fy = d.y;
+        });
+
+        // Create the links
+        const link = g.append("g")
+            .selectAll("line")
+            .data(graphData.links)
+            .join("line")
+            .attr("class", d => `link ${d.relationship}`)
+            .attr("stroke", d => d.color)
+            .attr("stroke-width", d => d.weight)
+            .style("stroke-dasharray", d => {
+                switch(d.relationship) {
+                    case 'transitive': return "5,5";
+                    case 'license': return "2,2";
+                    default: return null;
+                }
+            });
+
+        // Create the nodes
+        const node = g.append("g")
+            .selectAll("g")
+            .data(graphData.nodes)
+            .join("g")
+            .attr("class", d => {
+                let classes = "node";
+                if (d.isVulnerable) classes += " vulnerable";
+                if (d.isDependent) classes += " dependent";
+                return classes;
+            })
+            .attr("transform", d => `translate(${d.x},${d.y})`)
+            .on("mouseenter", function(event, d) {
+                showTooltip(event, d);
+            })
+            .on("mouseleave", function(event, d) {
+                hideTooltip();
+            });
+
+        // Add circles to nodes
+        node.append("circle")
+            .attr("r", d => d.size / 2)
+            .attr("fill", d => d.color)
+            .style("stroke", d => {
+                if (d.type === 'LICENSE' || d.gnnConfidence === undefined) {
+                    return '#6c757d';
+                }
+                const confidence = d.gnnConfidence || 0;
+                const colorInterpolator = d3.interpolateRgb("#90EE90", "#B22222");
+                return colorInterpolator(confidence);
+            })
+            .attr("stroke-width", d => {
+                if (d.type === 'LICENSE') return 1.5;
+                const hasValidGNN = d.gnnConfidence !== undefined && d.gnnPrediction !== 'Unknown' && d.gnnPrediction !== 'Error';
+                return hasValidGNN ? 2.5 : 1.5;
+            });
+
+        // Add labels
+        node.append("text")
+            .attr("dy", d => d.size / 2 + 15)
+            .text(d => d.label)
+            .attr("text-anchor", "middle");
+
+        // Update link positions
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        function showTooltip(event, d) {
+            tooltip.style("display", "block")
+                   .style("pointer-events", "auto");
+
+            let tooltipContent = `<h4>${d.fullLabel}</h4>`;
+
+            if (d.description) {
+                tooltipContent += `<p>${d.description}</p>`;
+            }
+
+            // Add GNN info
+            if (d.type !== 'LICENSE' && d.gnnPrediction && d.gnnPrediction !== 'Unknown') {
+                const confidencePercent = (d.gnnConfidence * 100).toFixed(1);
+                let gnnColor = d.gnnPrediction === 'Vulnerable' ? '#E69500' : '#28a745';
+                tooltipContent += `
+                    <div style="background-color: #f0f0f0; padding: 8px; border-radius: 4px; margin-top: 10px;">
+                        <h5 style="margin: 0 0 5px 0; font-size: 14px;">GNN Analysis</h5>
+                        <p style="margin: 3px 0;">Prediction: <strong style="color:${gnnColor};">${d.gnnPrediction}</strong></p>
+                        <p style="margin: 3px 0;">Confidence: ${confidencePercent}%</p>
+                    </div>`;
+            }
+
+            if (d.isVulnerable && d.vulnerabilities && d.vulnerabilities.length > 0) {
+                tooltipContent += `<div class="vulnerability-info"><h5>Vulnerabilities</h5>`;
+                d.vulnerabilities.forEach(vuln => {
+                    tooltipContent += `<div class="vulnerability-item">
+                        <strong>${vuln.id}</strong><br>
+                        ${vuln.description || 'No description available'}
+                    </div>`;
+                });
+                tooltipContent += `</div>`;
+            }
+
+            tooltip.html(tooltipContent);
+
+            const tooltipRect = tooltip.node().getBoundingClientRect();
+            let left = event.pageX + 10;
+            let top = event.pageY - 10;
+
+            if (left + tooltipRect.width > window.innerWidth) {
+                left = window.innerWidth - tooltipRect.width - 10;
+            }
+            if (top + tooltipRect.height > window.innerHeight) {
+                top = window.innerHeight - tooltipRect.height - 10;
+            }
+
+            tooltip.style("left", left + "px")
+                   .style("top", top + "px")
+                   .transition()
+                   .duration(200)
+                   .style("opacity", 0.95);
+        }
+
+        function hideTooltip() {
+            tooltip.style("pointer-events", "none")
+                   .transition()
+                   .duration(300)
+                   .style("opacity", 0)
+                   .on("end", function() {
+                       if (+d3.select(this).style("opacity") === 0) {
+                           d3.select(this).style("display", "none");
+                       }
+                   });
+        }
+
+        // Edge visibility controls
+        function updateVisibility() {
+            const showDirect = d3.select("#direct-edges").property("value") == "1";
+            const showTransitive = d3.select("#transitive-edges").property("value") == "1";
+            const showLicense = d3.select("#license-edges").property("value") == "1";
+
+            link.style("display", d => {
+                if (d.relationship === 'direct' && !showDirect) return "none";
+                if (d.relationship === 'transitive' && !showTransitive) return "none";
+                if (d.relationship === 'license' && !showLicense) return "none";
+                return null;
+            });
+        }
+
+        // Add event listeners
+        d3.select("#direct-edges").on("input", updateVisibility);
+        d3.select("#transitive-edges").on("input", updateVisibility);
+        d3.select("#license-edges").on("input", updateVisibility);
+
+        d3.select("#reset-button").on("click", () => {
+            svg.transition().duration(750).call(
+                zoom.transform,
+                d3.zoomIdentity
+            );
+        });
+
+        // Initial visibility update
+        updateVisibility();
+    </script>
+</body>
+</html>
